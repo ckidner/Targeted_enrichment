@@ -1,0 +1,7 @@
+begin paup;
+log file = filename_paup_out replace;
+cstatus;
+tstatus;
+log stop;
+END;
+Quit;

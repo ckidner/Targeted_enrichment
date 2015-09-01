@@ -21,8 +21,6 @@
 # Concat_nexus.py
 
 
-
-
 # Set up bowtie2 index of the the bait set
 
 bowtie2-build Ref.fna Inga_unique_baits
@@ -81,9 +79,11 @@ samtools idxstats "$f"_sorted.bam |grep -v "^\*" | awk '{ depth=250*$3/$2} {prin
 
 done < acc_names
 
+# paste the readcounts into a table - this may need adjusting for different forms of bait names.
+
 paste *_rc | sed 's/comp[0-9]*_c[0-9]_seq[0-9]*//g' > all.txt
 
-awk ‘{print $1}’ BCI_97_rc | > loci_list
+awk ‘{print $1}’ example_rc | > loci_list
 
 paste -s acc_names > acc_titles
 cat acc_titles all.txt  > g
@@ -98,17 +98,8 @@ clean_vcf.sh "$f";
 
 done < acc_names
 
-# Replace ambiguities with Ns
-
-while read f ; 
-do 
-
-sed ’s/[RYWSMKDVHB]/N/g’ “$f”.fasta > “$f”.fna ; 
-
-done < acc_names 
-
 # Convert from multifastas of loci per accession to multifasta of accession per locus
-# Need a folder called By_locus, a list of loci called “locus_list” and a list of files called “fasta_files”
+# Needs a folder called By_locus, a list of loci called “locus_list” and a list of files called “fasta_files”
 
 switch_multifastas.py
 
@@ -117,11 +108,11 @@ switch_multifastas.py
 while read f ;
 do
 
-f_tidy.sh “$f”
+tidy_mafft.sh “$f”
 
 done < locus_list
 
-# Use trimmal to trim the alignemnts of gappy regions and output as nexus for PAUP
+# Use trimmal to trim the alignments of gappy regions and output as nexus for PAUP
 
 while read f ; 
 do 
@@ -138,7 +129,6 @@ while read f ; do sed 's/filename/'"$f"'/g' try_"$f" > go_"$f";
 done < files
 
 while read f ; do paup -n go_"$f"; done < files
-
 
 # Gather variation stats from PAUP output
 
