@@ -1,0 +1,1 @@
+The file "Hyb_baits_pipeline"  provides an outline of how the scripts in this folder were used to generate the data in Nicholls et al., (2015) Frontiers in Plant Biology - Technical Advances Section.
