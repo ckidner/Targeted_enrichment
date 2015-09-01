@@ -1,0 +1,162 @@
+# A pseudo_shell script for a pipeline to run from receiving the raw reads to producing aligned nexus files for phylogenetics.
+
+# Requires:
+# bowtie2
+# cutadapt
+# trimmomatic
+# samtools
+# Trimal
+# PAUP
+
+# Also our scripts:
+
+# more_tidying.sh
+# ck_empties.sh
+# ck_remove.sh
+# bam_me.sh
+# pick_bowtie_parameters.sh
+# get_vcf_stats.sh
+# clean_vcf.sh
+# tidy_mafft.sh 
+# Concat_nexus.py
+
+
+
+
+# Set up bowtie2 index of the the bait set
+
+bowtie2-build Ref.fna Inga_unique_baits
+
+# Quality control and trimming the reads for each accesssion
+# Examine reads
+
+while read f ; do fastqc "$f" ; done < fastq_files
+
+#Quick overview
+
+while read f ; do paste "$f".sa_fastqc/summary.txt >> FastQC_Summary.txt ; done < Acc_names
+
+#Look in detail at any problematic ones
+
+#Initial trimming
+
+while read f ;
+do
+
+java -jar ~/Trimmomatic/Trimmomatic-0.30/trimmomatic-0.30.jar PE -phred33 “$f”_1.sanfastq.gz ”$f”_2.sanfastq.gz “$f”_forward_paired.fq.gz “$f”_forward_unpaired.fq.gz “$f”_reverse_paired.fq.gz “$f”_reverse_unpaired.fq.gz ILLUMINACLIP:TruSeq3-PE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+
+done < acc_names
+
+# Further trimming using cutadapt to remove the reverse read adapters
+
+while read f ; do ./more_tidying.sh "$f" ; done < acc_names
+
+# Optimise the mapping intercept parameter for bowtie2 mapping on a test accession
+
+# Used pick_bowtie_paramters.sh which allows you to pick intercept range and steps
+
+pick_bowtie_parameters.sh
+
+# mine the vcf file for stats
+
+get_vcf_stats.sh
+
+#Decide which settings you are happy with mapping fewest paralogs together
+
+# bowtie reads to baits using agreed intercept to produce a vcf file.
+
+while read f; 
+
+do bam_me.sh "$f" ; 
+
+done < acc_names
+
+
+# Get read counts  
+
+while read f ; 
+do 
+
+samtools idxstats "$f"_sorted.bam |grep -v "^\*" | awk '{ depth=250*$3/$2} {print $1, depth}' | sort > "$f"_rc ; 
+
+done < acc_names
+
+paste *_rc | sed 's/comp[0-9]*_c[0-9]_seq[0-9]*//g' > all.txt
+
+awk ‘{print $1}’ BCI_97_rc | > loci_list
+
+paste -s acc_names > acc_titles
+cat acc_titles all.txt  > g
+paste loci_titles g  > output.txt
+
+# Edit vcf file to remove indels and calls with quality less than 36.  Outputs the consensus fasta
+
+while read f;
+do
+
+clean_vcf.sh "$f";
+
+done < acc_names
+
+# Replace ambiguities with Ns
+
+while read f ; 
+do 
+
+sed ’s/[RYWSMKDVHB]/N/g’ “$f”.fasta > “$f”.fna ; 
+
+done < acc_names 
+
+# Convert from multifastas of loci per accession to multifasta of accession per locus
+# Need a folder called By_locus, a list of loci called “locus_list” and a list of files called “fasta_files”
+
+switch_multifastas.py
+
+# Replace name of seq with just the accession, convert bases to uppercase, mafft align
+
+while read f ;
+do
+
+f_tidy.sh “$f”
+
+done < locus_list
+
+# Use trimmal to trim the alignemnts of gappy regions and output as nexus for PAUP
+
+while read f ; 
+do 
+
+trimal -in "$f"_mafft.fna -out "$f"_strict_trimmed.nex -strict -nexus ; 
+
+done < locus_list
+
+
+# Modify nexus files for PAUP input and run
+
+while read f ; do cat "$f" commandQ > try_"$f"; done < files
+while read f ; do sed 's/filename/'"$f"'/g' try_"$f" > go_"$f";
+done < files
+
+while read f ; do paup -n go_"$f"; done < files
+
+
+# Gather variation stats from PAUP output
+
+grep "Number of parsimony-informative" *paup_out > PI_char.txt
+grep  "parsimony-uninformative" *paup_out > Variable.txt
+grep "total characters" *paup_out > Total_char.txt
+grep "constant" *paup_out > Constant_char.txt
+grep -L "parsimony-uninformative" *paup_out
+
+# Concatenate loci nexus files into a single “bucket” and trimmal.
+
+# List chosen loci’s nexus file names in a text file called “nexus_files"
+# List accessions in a text file called  = "acc_names"
+
+Concat_nexus.py
+
+trimal -in concat.nex -out concat_trimmed.nex -strict -nexus
+
+# Run quick raxML tree
+
+raxmlHPC -m GTRGAMMA -p 12345 -s concat_stringent_new.phy -# 20 -n T6 
